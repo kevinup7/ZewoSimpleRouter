@@ -27,19 +27,19 @@ import HTTP
 public struct SimpleRouteMatcher {
 	let allRoutes: [SimpleRoute]
 	
-	let staticRoutes: [SimpleRoute]
+	let staticRoutes: [String: SimpleRoute]
 	let fixedLengthRoutes: [SimpleRoute]
 	let wildcardRoutes: [SimpleRoute]
 	
 	
 	public init(routes: [SimpleRoute]) {
-		var tempStatic: [SimpleRoute] = []
+		var tempStatic: [String: SimpleRoute] = [:]
 		var tempFixed: [SimpleRoute] = []
 		var tempWildcard: [SimpleRoute] = []
 		
 		for route in routes {
 			if route.staticPath {
-				tempStatic.append(route)
+				tempStatic[route.path] = route
 			} else if route.fixedLength {
 				tempFixed.append(route)
 			} else {
@@ -59,10 +59,8 @@ public struct SimpleRouteMatcher {
 		}
 		
 		// Try static routes
-		for route in staticRoutes {
-			if route.matchesStaticPath(path) {
-				return (route, nil)
-			}
+		if let route = staticRoutes[path] {
+			return (route, nil)
 		}
 		
 		let pathComponents = path.split("/")

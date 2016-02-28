@@ -60,10 +60,6 @@ public struct SimpleRoute: Equatable {
 		}
 	}
 	
-	func matchesStaticPath(staticPath: String) -> Bool {
-		return path == staticPath
-	}
-	
 	func matchesFixedLengthPath(path: [String]) -> [String: String]? {
 		guard segments.count == path.count else {
 			return nil
