@@ -23,40 +23,111 @@
 //SOFTWARE.
 
 import HTTP
+import Router
 
-public struct SimpleRouter: ResponderType {
-	public let middleware: [MiddlewareType]
-	public let matcher: SimpleRouteMatcher
-	public let fallback: ResponderType
+public struct SimpleRouter: RouterType, RouterBuildable {
+	let staticRoutes: [String: SimpleRoute]
+	let fixedLengthRoutes: [SimpleRoute]
+	let wildcardRoutes: [SimpleRoute]
+    
+    public let middleware: [MiddlewareType]
+    public let fallback: ResponderType
+    
+    public init(_ basePath: String = "", middleware: MiddlewareType..., build: (route: RouterBuilder) -> Void) {
+        
+        self.middleware = middleware
+        
+        let builder = RouterBuilder(basePath: basePath)
+        build(route: builder)
+        self.fallback = builder.fallback
+        
+        let builderRoutes = builder.routes
+        var allRoutes: [SimpleRoute] = []
+        
+        // Check each route to see if path is already being used
+        for builderRoute in builderRoutes {
+            let index = allRoutes.indexOf { route in
+                return route.path == builderRoute.path
+            }
+            
+            if let index = index {
+                var route = allRoutes[index]
+                route.addAction(builderRoute.middleware, responder: builderRoute.responder, methods: builderRoute.methods)
+                allRoutes[index] = route
+            } else {
+                let route = SimpleRoute(m: builderRoute.methods, path: builderRoute.path, middleware: builderRoute.middleware, responder: builderRoute.responder)
+                allRoutes.append(route)
+            }
+        }
+        
+        // Once all routes are created, store based on route type
+        var tempStatic: [String: SimpleRoute] = [:]
+        var tempFixed: [SimpleRoute] = []
+        var tempWildcard: [SimpleRoute] = []
+        
+        for route in allRoutes {
+            if route.staticPath {
+                tempStatic[route.path] = route
+            } else if route.fixedLength {
+                tempFixed.append(route)
+            } else {
+                tempWildcard.append(route)
+            }
+        }
+        
+        self.staticRoutes = tempStatic
+        self.fixedLengthRoutes = tempFixed
+        self.wildcardRoutes = tempWildcard
+    }
 	
-	public init(_ basePath: String = "", middleware: MiddlewareType..., build: (route: SimpleRouterBuilder) -> Void) {
-		let builder = SimpleRouterBuilder(basePath: basePath)
-		build(route: builder)
-		self.middleware = middleware
-		self.matcher = SimpleRouteMatcher(routes: builder.routes)
-		self.fallback = builder.fallback
+	public func match(request: Request) -> ResponderType? {
+		guard let path = request.path else {
+			return nil
+		}
+		
+		// Try static routes
+		if let route = staticRoutes[path] {
+			return MatchType(responder: route, params: nil)
+		}
+		
+		let pathComponents = path.split("/")
+		
+		// Try fixed length routes
+		for route in fixedLengthRoutes {
+			if let params = route.matchesFixedLengthPath(pathComponents) {
+				return MatchType(responder: route, params: params)
+			}
+		}
+		
+		// Try wildcard routes
+		for route in wildcardRoutes {
+			if let params = route.matchesVariableLengthPath(pathComponents) {
+				return MatchType(responder: route, params: params)
+			}
+		}
+		
+		return nil
+	}
+}
+
+public struct MatchType: ResponderType {
+	let responder: ResponderType
+	let params: [String: String]?
+	
+	public init(responder: ResponderType, params: [String: String]?) {
+		self.responder = responder
+		self.params = params
 	}
 	
 	public func respond(request: Request) throws -> Response {
-		if let (route, params) = matcher.match(request) {
-			if let responder = route.responders[request.method] {
-				var request = request
-				
-				if let params = params {
-					for (key, value) in params {
-						request.pathParameters[key] = value
-					}
-				}
-				
-				return try middleware.intercept(responder).respond(request)
-			} else {
-				var response = Response(status: .MethodNotAllowed)
-				response.allow = route.supportedMethods
-				return response
+		var request = request
+		
+		if let params = params {
+			for (key, value) in params {
+				request.pathParameters[key] = value
 			}
-			
-		} else {
-			return try middleware.intercept(fallback).respond(request)
 		}
+		
+		return try responder.respond(request)
 	}
 }

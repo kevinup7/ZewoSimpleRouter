@@ -23,23 +23,24 @@
 //SOFTWARE.
 
 import HTTP
+import Router
 
-public struct SimpleRoute: Equatable {
-	var responders: [Method: ResponderType]
+public struct SimpleRoute: RouteType, Equatable {
+	public let path: String
+	public var actions: [Method: Action]
 	
-	let path: String
 	let segments: [SimpleRouteSegment]
-	
 	let staticPath: Bool
 	let fixedLength: Bool
 	
 	var supportedMethods: Set<Method> {
-		return Set(responders.keys)
+		return Set(actions.keys)
 	}
 	
-	public init(methods: Set<Method>, path: String, middleware: [MiddlewareType], responder: ResponderType) {
-		self.responders = [:]
+	public init(m: Set<Method>, path: String, middleware: [MiddlewareType], responder: ResponderType) {
+		self.actions = [:]
 		self.path = path
+		
 		let segments = path.simpleRouteSegments()
 		
 		self.fixedLength = !segments.contains { (segment) -> Bool in
@@ -51,12 +52,12 @@ public struct SimpleRoute: Equatable {
 		})
 		
 		self.segments = segments
-		addResponder(responder, forMethods: methods)
+		addAction(middleware, responder: responder, methods: m)
 	}
 	
-	public mutating func addResponder(handler: ResponderType, forMethods methods: Set<Method>) {
+	public mutating func addAction(middleware: [MiddlewareType], responder: ResponderType, methods: Set<Method>) {
 		for method in methods {
-			responders[method] = handler
+			actions[method] = (middleware, responder)
 		}
 	}
 	
