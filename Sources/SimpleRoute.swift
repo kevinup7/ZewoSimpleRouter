@@ -24,21 +24,16 @@
 
 import HTTP
 
-public struct SimpleRoute: Equatable {
-	var responders: [Method: ResponderType]
-	
-	let path: String
+public struct SimpleRoute: RouteType, Equatable {
+	public var actions: [Method: Action]
+	public let path: String
+    
 	let segments: [SimpleRouteSegment]
-	
 	let staticPath: Bool
 	let fixedLength: Bool
 	
-	var supportedMethods: Set<Method> {
-		return Set(responders.keys)
-	}
-	
 	public init(methods: Set<Method>, path: String, middleware: [MiddlewareType], responder: ResponderType) {
-		self.responders = [:]
+		self.actions = [:]
 		self.path = path
 		let segments = path.simpleRouteSegments()
 		
@@ -53,64 +48,83 @@ public struct SimpleRoute: Equatable {
 		self.segments = segments
 		addResponder(responder, forMethods: methods)
 	}
+    
+    public init(path: String, actions: [Method: Action]) {
+        self.path = path
+        self.actions = actions
+        
+        let segments = path.simpleRouteSegments()
+        
+        self.fixedLength = !segments.contains { (segment) -> Bool in
+            return !segment.isFixedLength
+        }
+        
+        self.staticPath = !segments.contains({ (segment) -> Bool in
+            return !segment.isStatic
+        })
+        
+        self.segments = segments
+    }
 	
 	public mutating func addResponder(handler: ResponderType, forMethods methods: Set<Method>) {
 		for method in methods {
-			responders[method] = handler
+			actions[method] = Action(middleware: [], responder: handler)
 		}
 	}
-	
-	func matchesFixedLengthPath(path: [String]) -> [String: String]? {
-		guard segments.count == path.count else {
-			return nil
-		}
-		
-		var parameters = [String : String]()
-		
-		for (pathComponent, segment) in zip(path, segments) {
-			if case .Static(let segmentValue) = segment {
-				if segmentValue != pathComponent {
-					return nil
-				}
-			} else if case .Parameter(let parameter) = segment {
-				parameters[parameter] = pathComponent
-			}
-		}
-		
-		return parameters
-	}
-	
-	func matchesVariableLengthPath(path: [String]) -> [String: String]? {
-		guard segments.count <= path.count else {
-			return nil
-		}
-		
-		var parameters = [String : String]()
-		
-		var segmentIndex = 0
-		while segmentIndex < segments.count {
-			let segment = segments[segmentIndex]
-			
-			switch segment {
-			case .Static(let segmentValue):
-				if segmentValue != path[segmentIndex] {
-					return nil
-				}
-			case .Parameter(let paramName):
-				parameters[paramName] = path[segmentIndex]
-			case .Wildcard:
-				let wildcardPath = path[segmentIndex ..< path.count]
-				let pathString = wildcardPath.joinWithSeparator("/")
-				parameters["*"] = pathString
-				
-				return parameters
-			}
-			
-			segmentIndex += 1
-		}
-		
-		return parameters
-	}
+}
+
+extension SimpleRoute {
+    func matchesFixedLengthPath(path: [String]) -> [String: String]? {
+        guard segments.count == path.count else {
+            return nil
+        }
+        
+        var parameters = [String : String]()
+        
+        for (pathComponent, segment) in zip(path, segments) {
+            if case .Static(let segmentValue) = segment {
+                if segmentValue != pathComponent {
+                    return nil
+                }
+            } else if case .Parameter(let parameter) = segment {
+                parameters[parameter] = pathComponent
+            }
+        }
+        
+        return parameters
+    }
+    
+    func matchesVariableLengthPath(path: [String]) -> [String: String]? {
+        guard segments.count <= path.count else {
+            return nil
+        }
+        
+        var parameters = [String : String]()
+        
+        var segmentIndex = 0
+        while segmentIndex < segments.count {
+            let segment = segments[segmentIndex]
+            
+            switch segment {
+            case .Static(let segmentValue):
+                if segmentValue != path[segmentIndex] {
+                    return nil
+                }
+            case .Parameter(let paramName):
+                parameters[paramName] = path[segmentIndex]
+            case .Wildcard:
+                let wildcardPath = path[segmentIndex ..< path.count]
+                let pathString = wildcardPath.joinWithSeparator("/")
+                parameters["*"] = pathString
+                
+                return parameters
+            }
+            
+            segmentIndex += 1
+        }
+        
+        return parameters
+    }
 }
 
 extension SimpleRoute {

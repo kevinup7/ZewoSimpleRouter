@@ -24,20 +24,25 @@
 
 import HTTP
 
-public struct SimpleRouteMatcher {
-	let allRoutes: [SimpleRoute]
+public struct SimpleRouteMatcher: RouteMatcherType {
+	public let routes: [RouteType]
 	
 	let staticRoutes: [String: SimpleRoute]
 	let fixedLengthRoutes: [SimpleRoute]
 	let wildcardRoutes: [SimpleRoute]
 	
-	
-	public init(routes: [SimpleRoute]) {
+	public init(routes: [RouteType]) {
+        self.routes = routes
+        
+        let simpleRoutes = routes.map { (route) -> SimpleRoute in
+            return SimpleRoute(path: route.path, actions: route.actions)
+        }
+        
 		var tempStatic: [String: SimpleRoute] = [:]
 		var tempFixed: [SimpleRoute] = []
 		var tempWildcard: [SimpleRoute] = []
 		
-		for route in routes {
+		for route in simpleRoutes {
 			if route.staticPath {
 				tempStatic[route.path] = route
 			} else if route.fixedLength {
@@ -50,17 +55,17 @@ public struct SimpleRouteMatcher {
 		self.staticRoutes = tempStatic
 		self.fixedLengthRoutes = tempFixed
 		self.wildcardRoutes = tempWildcard
-		self.allRoutes = routes
+		
 	}
 	
-	public func match(request: Request) -> (SimpleRoute, [String: String]?)? {
-		guard let path = request.path else {
-			return nil
-		}
-		
+    public func match(request: Request) -> RouteType? {
+        guard let path = request.path else {
+            return nil
+        }
+        
 		// Try static routes
 		if let route = staticRoutes[path] {
-			return (route, nil)
+			return route
 		}
 		
 		let pathComponents = path.split("/")
@@ -68,14 +73,14 @@ public struct SimpleRouteMatcher {
 		// Try fixed length routes
 		for route in fixedLengthRoutes {
 			if let params = route.matchesFixedLengthPath(pathComponents) {
-				return (route, params)
+				return MatchedParamsRoute(path: path, actions: route.actions, fallback: route.fallback, params: params)
 			}
 		}
 		
 		// Try wildcard routes
 		for route in wildcardRoutes {
 			if let params = route.matchesVariableLengthPath(pathComponents) {
-				return (route, params)
+				return MatchedParamsRoute(path: path, actions: route.actions, fallback: route.fallback, params: params)
 			}
 		}
 		
@@ -89,4 +94,35 @@ public struct SimpleRouteMatcher {
 	public func mergePathComponents(components: [String]) -> String {
 		return components.joinWithSeparator("/")
 	}
+}
+
+struct MatchedParamsRoute: RouteType {
+    let path: String
+    let actions: [Method : Action]
+    let fallback: Action
+    
+    let params: [String: String]?
+    
+    init(path: String, actions: [Method: Action], fallback: Action, params: [String: String]) {
+        self.path = path
+        self.actions = actions
+        self.fallback = fallback
+        self.params = params
+    }
+    
+    func respond(request: Request) throws -> Response {
+        guard let action = actions[request.method] else {
+            return try fallback.respond(request)
+        }
+        
+        var request = request
+        
+        if let params = params {
+            for (key, value) in params {
+                request.pathParameters[key] = value
+            }
+        }
+        
+        return try action.respond(request)
+    }
 }
